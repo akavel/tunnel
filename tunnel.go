@@ -1,3 +1,7 @@
+/*
+Package tunnel eases creation of simple TLS connection over insecure network 
+between safe, fully controlled endpoints.
+*/
 package tunnel
 
 import (
@@ -11,24 +15,28 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
 	"time"
 )
 
+// Information which will be contained self-signed in certificate (that is, in priv+pub keypair).
 type SimpleCert struct {
 	CommonName string
-	NotBefore  *time.Time // optional; defaults to: "5 min before cert was created"
-	NotAfter   *time.Time // optional; defaults to: "year after cert was created"
 }
 
 func pemEncode(typename string, bytes []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: typename, Bytes: bytes})
 }
 
+// Private + public key information.
 type KeyPair struct {
 	pub, priv []byte
 	decoded   tls.Certificate
 }
 
+// Generates a randomized 1024b RSA self-signed private+public key set.
+// The key is not useful out of this package (e.g. in fully-fledged TLS),
+// as it is set to be marked as expired by the time it is created.
 func Keygen(simple SimpleCert) (*KeyPair, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
@@ -36,22 +44,13 @@ func Keygen(simple SimpleCert) (*KeyPair, error) {
 	}
 
 	now := time.Now()
-	if simple.NotBefore == nil {
-		simple.NotBefore = new(time.Time)
-		*simple.NotBefore = now.Add(-5 * time.Minute).UTC()
-	}
-	if simple.NotAfter == nil {
-		simple.NotAfter = new(time.Time)
-		*simple.NotAfter = now.AddDate(1, 0, 0).UTC() // valid for 1 year.
-	}
-
 	template := x509.Certificate{
 		SerialNumber: new(big.Int).SetInt64(0),
 		Subject: pkix.Name{
 			CommonName: simple.CommonName,
 		},
-		NotBefore: *simple.NotBefore,
-		NotAfter:  *simple.NotAfter,
+		NotBefore: now, // dummy value
+		NotAfter:  now, // dummy value
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
@@ -64,6 +63,7 @@ func Keygen(simple SimpleCert) (*KeyPair, error) {
 		pemEncode("RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(priv)))
 }
 
+// Load a private+public key pair from PEM-encoded serialized form.
 func PEMDecode(pub, priv []byte) (*KeyPair, error) {
 	decoded, err := tls.X509KeyPair(pub, priv)
 	if err != nil {
@@ -72,16 +72,41 @@ func PEMDecode(pub, priv []byte) (*KeyPair, error) {
 	return &KeyPair{pub: pub, priv: priv, decoded: decoded}, nil
 }
 
+// Get the public part of the key pair.
 func (pair KeyPair) Pub() *x509.Certificate {
 	pub, err := x509.ParseCertificate(pair.decoded.Certificate[0])
 	if err != nil {
-		panic(err) // should not happen
+		return nil // panic(err) // should not happen
 	}
 	return pub
 }
 
+// Serialize the private+public key pair using PEM encoding.
 func (pair KeyPair) PEMEncoded() (pub, priv []byte) {
 	return append([]byte(nil), pair.pub...), append([]byte(nil), pair.priv...)
+}
+
+func (pair KeyPair) Save(pubpath, privpath string) error {
+	pubf, err := os.Create(pubpath)
+	if err != nil {
+		return err
+	}
+	defer pubf.Close()
+	_, err = pubf.Write(pair.pub)
+	if err != nil {
+		return err
+	}
+
+	privf, err := os.OpenFile(privpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer privf.Close()
+	_, err = privf.Write(pair.priv)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 type ClientHandler func(*tls.Conn, error) (more bool)
@@ -90,7 +115,6 @@ func Serve(tcpPort uint, cert *KeyPair, otherPubKey *x509.Certificate, handler C
 	config := &tls.Config{
 		Certificates: []tls.Certificate{cert.decoded},
 		ClientAuth:   tls.RequireAnyClientCert, // Must be done on server
-		//TODO: why above?
 	}
 	listener, err := tls.Listen("tcp", fmt.Sprintf(":%d", tcpPort), config)
 	if err != nil {
@@ -103,13 +127,7 @@ func Serve(tcpPort uint, cert *KeyPair, otherPubKey *x509.Certificate, handler C
 			tlsConn, err = verifyOtherSide(conn, otherPubKey)
 		}
 		//TODO: replace each 'handler()' with 'go handler()'?
-		if err != nil {
-			if !handler(tlsConn, err) {
-				break
-			}
-			continue
-		}
-		if !handler(tlsConn, nil) {
+		if !handler(tlsConn, err) {
 			break
 		}
 	}
@@ -152,7 +170,6 @@ func Dial(serverAddr string, cert *KeyPair, otherPubKey *x509.Certificate) (*tls
 	config := &tls.Config{
 		Certificates:       []tls.Certificate{cert.decoded},
 		InsecureSkipVerify: true, // Must be done on client
-		//TODO: why above?
 	}
 	conn, err := tls.Dial("tcp", serverAddr, config)
 	if err != nil {
