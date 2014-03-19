@@ -8,11 +8,11 @@ import (
 )
 
 func TestFull(t *T) {
-	pair1, err := Keygen(SimpleCert{CommonName: "foo"})
+	pair1, err := Keygen("foo")
 	if err != nil {
 		t.Fatal("Can't create keypair 1:", err.Error())
 	}
-	pair2, err := Keygen(SimpleCert{CommonName: "bar"})
+	pair2, err := Keygen("bar")
 	if err != nil {
 		t.Fatal("Can't create keypair 2:", err.Error())
 	}
