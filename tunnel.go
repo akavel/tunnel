@@ -42,7 +42,7 @@ func Keygen(name string) (*KeyPair, error) {
 	template := x509.Certificate{
 		SerialNumber: new(big.Int).SetInt64(0),
 		Subject: pkix.Name{
-			CommonName: name string,
+			CommonName: name,
 		},
 		NotBefore: now, // dummy value
 		NotAfter:  now, // dummy value
