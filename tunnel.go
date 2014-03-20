@@ -1,5 +1,5 @@
 /*
-Package tunnel eases creation of simple TLS connection over insecure network 
+Package tunnel eases creation of simple TLS connection over insecure network
 between safe, fully controlled endpoints.
 */
 package tunnel
@@ -19,11 +19,6 @@ import (
 	"time"
 )
 
-// Information which will be contained self-signed in certificate (that is, in priv+pub keypair).
-type SimpleCert struct {
-	CommonName string
-}
-
 func pemEncode(typename string, bytes []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: typename, Bytes: bytes})
 }
@@ -37,7 +32,7 @@ type KeyPair struct {
 // Generates a randomized 1024b RSA self-signed private+public key set.
 // The key is not useful out of this package (e.g. in fully-fledged TLS),
 // as it is set to be marked as expired by the time it is created.
-func Keygen(simple SimpleCert) (*KeyPair, error) {
+func Keygen(name string) (*KeyPair, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
 		return nil, err
@@ -47,7 +42,7 @@ func Keygen(simple SimpleCert) (*KeyPair, error) {
 	template := x509.Certificate{
 		SerialNumber: new(big.Int).SetInt64(0),
 		Subject: pkix.Name{
-			CommonName: simple.CommonName,
+			CommonName: name,
 		},
 		NotBefore: now, // dummy value
 		NotAfter:  now, // dummy value
