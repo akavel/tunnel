@@ -1,5 +1,5 @@
 /*
-Package tunnel eases creation of simple TLS connection over insecure network 
+Package tunnel eases creation of simple TLS connection over insecure network
 between safe, fully controlled endpoints.
 */
 package tunnel
